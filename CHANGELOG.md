@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-07
+
 ### Added
 
 - **Terraform modules** for Scaleway Kapsule cluster, managed PostgreSQL, and container registry
@@ -17,3 +19,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **SealedSecrets template** with documentation for secret sealing workflow
 - **DBOS worker entrypoint** that derives individual DB vars from DATABASE_URL (single source of truth)
 - **Migration Job** with initContainer ordering guarantee on deployments
+- **Pre-commit hooks** adapted for Terraform/infra: terraform_fmt, terraform_validate, tflint, kubeconform, shellcheck, gitleaks, commitizen
+- **README** with architecture diagram, quick start, cost estimate, and rollback runbook
