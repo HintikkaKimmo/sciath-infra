@@ -30,17 +30,23 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event.client_payload.environment || github.event.inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Set variables
         id: vars
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.client_payload.image_tag }}
+          DISPATCH_ENV: ${{ github.event.client_payload.environment }}
+          INPUT_TAG: ${{ github.event.inputs.image_tag }}
+          INPUT_ENV: ${{ github.event.inputs.environment }}
         run: |
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "image_tag=${{ github.event.client_payload.image_tag }}" >> $GITHUB_OUTPUT
-            echo "environment=${{ github.event.client_payload.environment }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            echo "image_tag=$DISPATCH_TAG" >> $GITHUB_OUTPUT
+            echo "environment=$DISPATCH_ENV" >> $GITHUB_OUTPUT
           else
-            echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
-            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "image_tag=$INPUT_TAG" >> $GITHUB_OUTPUT
+            echo "environment=$INPUT_ENV" >> $GITHUB_OUTPUT
           fi
 
       - name: Install tools
