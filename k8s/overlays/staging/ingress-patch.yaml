@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sciath-api
+  namespace: sciath
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  tls:
+    - hosts:
+        - api-staging.sciath.io
+      secretName: sciath-api-staging-tls
+  rules:
+    - host: api-staging.sciath.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: django-api
+                port:
+                  number: 80

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: django-config
+  namespace: sciath
+data:
+  DJANGO_SETTINGS_MODULE: "sciath.settings_prod"
+  USE_S3_STORAGE: "true"
+  SCALEWAY_ENDPOINT_URL: "https://s3.fr-par.scw.cloud"
+  SCALEWAY_REGION: "fr-par"
+  EMAIL_HOST: "smtp.tem.scw.cloud"
+  EMAIL_PORT: "465"
+  EMAIL_USE_SSL: "true"
+  DEFAULT_FROM_EMAIL: "noreply@sciath.io"
+  UVICORN_WORKERS: "2"

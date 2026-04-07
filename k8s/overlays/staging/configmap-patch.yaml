@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: django-config
+  namespace: sciath
+data:
+  ALLOWED_HOSTS: "api-staging.sciath.io"
+  FRONTEND_URL: "https://staging.sciath.io"
+  SCALEWAY_BUCKET_NAME: "sciath-reports-staging"

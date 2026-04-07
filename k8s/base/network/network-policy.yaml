@@ -1,0 +1,71 @@
+# Allow Django pods to receive ingress traffic and connect to Postgres
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: django-api
+  namespace: sciath
+spec:
+  podSelector:
+    matchLabels:
+      app: django-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8000
+          protocol: TCP
+  egress:
+    # DNS
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Postgres (private network)
+    - to: []
+      ports:
+        - port: 5432
+          protocol: TCP
+    # S3 / external HTTPS (NVD API, OAuth providers, email)
+    - to: []
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 465
+          protocol: TCP
+---
+# DBOS worker: no ingress, egress to Postgres and HTTPS only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dbos-worker
+  namespace: sciath
+spec:
+  podSelector:
+    matchLabels:
+      app: dbos-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to: []
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to: []
+      ports:
+        - port: 443
+          protocol: TCP

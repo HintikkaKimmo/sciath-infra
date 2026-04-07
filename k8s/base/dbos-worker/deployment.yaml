@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dbos-worker
+  namespace: sciath
+  labels:
+    app: dbos-worker
+    app.kubernetes.io/name: dbos-worker
+    app.kubernetes.io/part-of: sciath
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dbos-worker
+  template:
+    metadata:
+      labels:
+        app: dbos-worker
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: scw-registry
+      initContainers:
+        - name: wait-for-migrations
+          image: PLACEHOLDER
+          command:
+            - python
+            - -c
+            - |
+              import django, sys, time
+              django.setup()
+              from django.db import connection
+              for attempt in range(30):
+                  try:
+                      with connection.cursor() as cursor:
+                          cursor.execute("SELECT 1 FROM django_migrations LIMIT 1")
+                      print("Migrations table accessible")
+                      sys.exit(0)
+                  except Exception as e:
+                      print(f"Waiting for DB... ({e})")
+                      time.sleep(2)
+              print("DB not ready after 60s")
+              sys.exit(1)
+          envFrom:
+            - configMapRef:
+                name: django-config
+            - secretRef:
+                name: sciath-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: worker
+          image: PLACEHOLDER
+          command:
+            - bash
+            - -c
+            - |
+              # Derive individual DB vars from DATABASE_URL for dbos-config.yaml
+              # DATABASE_URL format: postgres://user:pass@host:port/dbname?sslmode=require
+              if [ -n "$DATABASE_URL" ]; then
+                export DB_USER=$(echo "$DATABASE_URL" | sed -E 's|postgres://([^:]+):.*|\1|')
+                export DB_PASSWORD=$(echo "$DATABASE_URL" | sed -E 's|postgres://[^:]+:([^@]+)@.*|\1|')
+                export DB_HOST=$(echo "$DATABASE_URL" | sed -E 's|postgres://[^@]+@([^:]+):.*|\1|')
+                export DB_PORT=$(echo "$DATABASE_URL" | sed -E 's|postgres://[^@]+@[^:]+:([0-9]+)/.*|\1|')
+                export DB_NAME=$(echo "$DATABASE_URL" | sed -E 's|postgres://[^/]+/([^?]+).*|\1|')
+              fi
+              exec python manage.py run_dbos_worker
+          envFrom:
+            - configMapRef:
+                name: django-config
+            - secretRef:
+                name: sciath-secrets
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "kill -0 1"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

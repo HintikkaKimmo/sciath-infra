@@ -1,0 +1,116 @@
+name: Deploy
+
+on:
+  repository_dispatch:
+    types: [deploy]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag (git SHA)'
+        required: true
+      environment:
+        description: 'Target environment'
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - prod
+
+concurrency:
+  group: deploy-${{ github.event.client_payload.environment || github.event.inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: rg.fr-par.scw.cloud/sciath/api
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.client_payload.environment || github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.client_payload.environment || github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set variables
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "image_tag=${{ github.event.client_payload.image_tag }}" >> $GITHUB_OUTPUT
+            echo "environment=${{ github.event.client_payload.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install tools
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.4/kubeconform-linux-amd64.tar.gz | tar xz -C /usr/local/bin
+          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.3.0/kustomize_v5.3.0_linux_amd64.tar.gz | tar xz -C /usr/local/bin
+
+      - name: Configure kubeconfig
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_PROJECT_ID }}
+        run: |
+          curl -sL https://github.com/scaleway/scaleway-cli/releases/latest/download/scaleway-cli_linux_amd64 -o /usr/local/bin/scw
+          chmod +x /usr/local/bin/scw
+          scw k8s kubeconfig get ${{ secrets.SCW_CLUSTER_ID }} > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Validate manifests
+        run: |
+          cd k8s/overlays/${{ steps.vars.outputs.environment }}
+          kustomize edit set image PLACEHOLDER=${{ env.REGISTRY }}:${{ steps.vars.outputs.image_tag }}
+          kustomize build . | kubeconform --strict --summary
+
+      - name: Run migration job
+        run: |
+          IMAGE="${{ env.REGISTRY }}:${{ steps.vars.outputs.image_tag }}"
+          JOB_NAME="django-migrate-$(echo ${{ steps.vars.outputs.image_tag }} | head -c 8)"
+
+          # Create migration job from template with unique name and image
+          cat k8s/base/django/migration-job.yaml | \
+            sed "s|name: django-migrate|name: $JOB_NAME|" | \
+            sed "s|image: PLACEHOLDER|image: $IMAGE|" | \
+            kubectl apply -f -
+
+          echo "Waiting for migration job $JOB_NAME..."
+          if ! kubectl wait --for=condition=complete "job/$JOB_NAME" -n sciath --timeout=300s; then
+            echo "Migration failed. Logs:"
+            kubectl logs "job/$JOB_NAME" -n sciath
+            kubectl delete "job/$JOB_NAME" -n sciath
+            exit 1
+          fi
+
+          echo "Migration successful. Cleaning up job."
+          kubectl delete "job/$JOB_NAME" -n sciath
+
+      - name: Deploy
+        run: |
+          cd k8s/overlays/${{ steps.vars.outputs.environment }}
+          kustomize build . | kubectl apply -f -
+          kubectl rollout status deployment/django-api -n sciath --timeout=180s
+          kubectl rollout status deployment/dbos-worker -n sciath --timeout=180s
+
+      - name: Smoke test
+        run: |
+          if [ "${{ steps.vars.outputs.environment }}" = "prod" ]; then
+            URL="https://api.sciath.io/health/"
+          else
+            URL="https://api-staging.sciath.io/health/"
+          fi
+          echo "Testing $URL..."
+          for i in $(seq 1 10); do
+            if curl -sf "$URL" | grep -q '"status".*"healthy"'; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i/10 failed, retrying in 10s..."
+            sleep 10
+          done
+          echo "Smoke test failed. Rolling back."
+          kubectl rollout undo deployment/django-api -n sciath
+          kubectl rollout undo deployment/dbos-worker -n sciath
+          exit 1

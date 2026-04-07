@@ -1,0 +1,17 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# Secrets (never commit)
+*.pem
+*.key
+sealing-key-backup.yaml
+secret.yaml
+*.env
+
+# OS
+.DS_Store

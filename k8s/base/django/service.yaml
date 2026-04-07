@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: django-api
+  namespace: sciath
+  labels:
+    app: django-api
+spec:
+  selector:
+    app: django-api
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
