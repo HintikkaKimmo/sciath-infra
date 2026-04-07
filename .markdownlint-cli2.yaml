@@ -1,0 +1,16 @@
+# markdownlint configuration for Sciath Infrastructure
+config:
+  MD013: false
+  MD041: false
+  MD034: false
+  MD003: false
+  MD033: false
+  MD024:
+    siblings_only: true
+  MD060: false
+  MD040: false
+  MD036: false
+
+globs:
+  - "**/*.md"
+  - "!.gstack/**"
