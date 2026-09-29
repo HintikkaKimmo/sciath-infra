@@ -10,14 +10,27 @@
 #   ./scripts/bootstrap-cluster.sh [staging|prod]
 set -euo pipefail
 
-ENV="${1:-staging}"
-echo "=== Bootstrapping Kapsule cluster for: $ENV ==="
+# This legacy stack uses a retired ingress controller. Require deliberate opt-in
+# for reproduction; production deployments must migrate to a maintained controller.
+if [ "${SCIATH_ALLOW_RETIRED_INGRESS:-0}" != "1" ]; then
+  echo "Ingress NGINX is retired. Migrate ingress before a new production deployment." >&2
+  echo "For legacy reproduction only, set SCIATH_ALLOW_RETIRED_INGRESS=1." >&2
+  exit 1
+fi
+
+TARGET_ENV="${1:-staging}"
+case "$TARGET_ENV" in
+  staging|prod) ;;
+  *) echo "Usage: $0 [staging|prod]" >&2; exit 1 ;;
+esac
+echo "=== Bootstrapping Kapsule cluster for: $TARGET_ENV ==="
 
 # 1. ingress-nginx
 echo "--- Installing ingress-nginx ---"
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
 helm repo update
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --version 4.15.1 \
   --namespace ingress-nginx \
   --create-namespace \
   --set controller.service.type=LoadBalancer \
@@ -29,6 +42,7 @@ echo "--- Installing cert-manager ---"
 helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
 helm repo update
 helm upgrade --install cert-manager jetstack/cert-manager \
+  --version v1.21.2 \
   --namespace cert-manager \
   --create-namespace \
   --set crds.enabled=true \
@@ -39,6 +53,7 @@ echo "--- Installing sealed-secrets ---"
 helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets 2>/dev/null || true
 helm repo update
 helm upgrade --install sealed-secrets sealed-secrets/sealed-secrets \
+  --version 2.20.0 \
   --namespace kube-system \
   --wait
 
@@ -70,7 +85,7 @@ for i in $(seq 1 30); do
     echo "Load Balancer IP: $LB_IP"
     echo ""
     echo "Point your DNS records to this IP:"
-    if [ "$ENV" = "prod" ]; then
+    if [ "$TARGET_ENV" = "prod" ]; then
       echo "  api.sciath.io -> $LB_IP"
     else
       echo "  api-staging.sciath.io -> $LB_IP"
@@ -97,4 +112,4 @@ echo "       --namespace sciath --from-literal=SECRET_KEY=... \\"
 echo "       --dry-run=client -o yaml | kubeseal --format yaml > k8s/base/secrets/sealedsecret.yaml"
 echo ""
 echo "  3. Deploy:"
-echo "     cd k8s/overlays/$ENV && kustomize build . | kubectl apply -f -"
+echo "     cd k8s/overlays/$TARGET_ENV && kustomize build . | kubectl apply -f -"

@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.16.4, < 2.0"
 
   required_providers {
     scaleway = {
@@ -38,7 +38,7 @@ module "rdb" {
   node_type          = "DB-GP-XS"
   volume_size_gb     = 50
   ha_enabled         = true
-  max_connections     = 400
+  max_connections    = 400
   private_network_id = module.kapsule.private_network_id
   region             = var.region
   tags               = local.tags

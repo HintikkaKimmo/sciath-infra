@@ -2,6 +2,7 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan
 .terraform/
 # Note: .terraform.lock.hcl is NOT gitignored — it MUST be tracked
 # to ensure reproducible provider versions across CI and developers.
@@ -12,6 +13,7 @@ crash.log
 *.key
 sealing-key-backup.yaml
 secret.yaml
+**/sealedsecret.yaml
 *.env
 
 # Security reports (local only)

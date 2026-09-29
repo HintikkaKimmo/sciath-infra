@@ -2,85 +2,83 @@ name: Terraform
 
 on:
   pull_request:
-    paths:
-      - 'terraform/**'
+    paths: ['terraform/**', '.github/workflows/terraform.yml']
   push:
     branches: [main]
-    paths:
-      - 'terraform/**'
+    paths: ['terraform/**', '.github/workflows/terraform.yml']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [staging, prod]
+      operation:
+        description: Cloud operation (apply changes real infrastructure)
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+      k8s_version:
+        description: Supported Scaleway Kubernetes version to plan or apply
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 concurrency:
-  group: terraform-${{ github.event.pull_request.number || github.ref }}
+  group: terraform-${{ github.event.inputs.environment || github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 env:
-  TF_VERSION: "1.7.5"
-  SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
-  SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
-  SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_PROJECT_ID }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+  TF_VERSION: '1.16.4'
+  TF_IN_AUTOMATION: 'true'
 
 jobs:
-  plan:
-    name: Plan (${{ matrix.environment }})
+  validate:
+    name: Validate (${{ matrix.environment }})
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     strategy:
       matrix:
         environment: [staging, prod]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform Init
+      - name: Check formatting
+        run: terraform fmt -check -recursive terraform
+      - name: Initialize providers without remote state
         working-directory: terraform/environments/${{ matrix.environment }}
-        run: terraform init
-
-      - name: Terraform Plan
+        run: terraform init -backend=false -lockfile=readonly -input=false
+      - name: Validate configuration
         working-directory: terraform/environments/${{ matrix.environment }}
-        run: terraform plan -no-color -out=tfplan
-        continue-on-error: true
+        run: terraform validate -no-color
 
-      - name: Post plan to PR
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const output = `#### Terraform Plan: \`${{ matrix.environment }}\`
-            \`\`\`
-            ${{ steps.plan.outputs.stdout || 'Plan output not captured' }}
-            \`\`\``;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output.substring(0, 65536)
-            });
-
-  apply:
-    name: Apply (${{ matrix.environment }})
+  cloud:
+    name: ${{ inputs.operation }} (${{ inputs.environment }})
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      max-parallel: 1
-      matrix:
-        environment: [staging]
-    environment: ${{ matrix.environment }}
+    environment: ${{ inputs.environment }}
+    env:
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_PROJECT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      TF_VAR_k8s_version: ${{ inputs.k8s_version }}
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform Init
-        working-directory: terraform/environments/${{ matrix.environment }}
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: terraform/environments/${{ matrix.environment }}
-        run: terraform apply -auto-approve
+      - run: terraform init -lockfile=readonly -input=false
+      - run: terraform plan -no-color -input=false -out=reviewed.tfplan
+      - name: Apply the generated plan
+        if: inputs.operation == 'apply'
+        run: terraform apply -input=false reviewed.tfplan
