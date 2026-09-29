@@ -4,6 +4,6 @@ variable "region" {
 }
 
 variable "k8s_version" {
-  type    = string
-  default = "1.30"
+  type        = string
+  description = "Kubernetes version supported by Scaleway in the target region; select explicitly before provisioning."
 }
