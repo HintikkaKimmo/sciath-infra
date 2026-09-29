@@ -79,7 +79,7 @@ echo "Without it, a cluster rebuild will require re-sealing all secrets."
 echo ""
 echo "=== Load Balancer IP ==="
 echo "Waiting for external IP..."
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   LB_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
   if [ -n "$LB_IP" ]; then
     echo "Load Balancer IP: $LB_IP"
